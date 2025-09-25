@@ -12,14 +12,18 @@ seedData().then(async () => {
   console.log('Database seeding completed');
   
   // Start Mirage server in development AFTER database seeding
-  if (import.meta.env.DEV) {
-    console.log('Starting MirageJS server...');
-    try {
-      const server = makeServer({ environment: 'development' });
-      console.log('MirageJS server started successfully');
-    } catch (error) {
-      console.error('Error starting MirageJS server:', error);
-    }
+  console.log('Environment check - import.meta.env.DEV:', import.meta.env.DEV);
+  console.log('Environment check - NODE_ENV:', import.meta.env.NODE_ENV);
+  console.log('Environment check - MODE:', import.meta.env.MODE);
+  
+  // Force MirageJS to start (removing environment check temporarily)
+  console.log('Starting MirageJS server...');
+  try {
+    const server = makeServer({ environment: 'development' });
+    console.log('MirageJS server started successfully');
+    console.log('MirageJS server object:', server);
+  } catch (error) {
+    console.error('Error starting MirageJS server:', error);
   }
   
   ReactDOM.createRoot(document.getElementById('root')).render(
