@@ -290,16 +290,11 @@ export function makeServer({ environment = 'development' } = {}) {
       // Create 25 initial jobs
       server.createList('job', 25);
       
-      // Create candidates for each job
-      const jobs = server.schema.jobs.all().models;
-      jobs.forEach(job => {
-        const candidateCount = Math.floor(Math.random() * 5) + 1; // 1-5 candidates per job
-        for (let i = 0; i < candidateCount; i++) {
-          server.create('candidate', { jobId: job.id });
-        }
-      });
+      // Note: Candidates will be seeded via database.js using thousandCandidates.js
+      // This avoids duplicate candidate creation between MirageJS and database seeding
       
       // Create 15 assessments
+      const jobs = server.schema.jobs.all().models;
       for (let i = 0; i < 15; i++) {
         const randomJob = jobs[Math.floor(Math.random() * jobs.length)];
         server.create('assessment', {
@@ -310,127 +305,142 @@ export function makeServer({ environment = 'development' } = {}) {
 
     routes() {
       this.namespace = 'api';
-      this.timing = 1000;
+      this.timing = 300; // Reduced timing for better performance
 
       // Jobs routes
-      this.get('/jobs', (schema) => {
-        console.log('API: Fetching jobs');
-        const jobs = schema.jobs.all().models;
-        console.log('API: Returning jobs:', jobs.length);
+      this.get('/jobs', async (schema) => {
+        console.log('API: Fetching jobs from database');
+        const jobs = await dbService.getAllJobs();
+        console.log('API: Returning jobs from database:', jobs.length);
         return { jobs };
       });
 
-      this.post('/jobs', (schema, request) => {
+      this.post('/jobs', async (schema, request) => {
         const attrs = JSON.parse(request.requestBody);
         console.log('API: Creating job with data:', attrs);
         
-        const job = schema.jobs.create({
+        // Add the job to the actual database
+        const finalData = {
           ...attrs,
-          id: attrs.id || Date.now(),
-          createdAt: attrs.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
         
-        console.log('API: Job created:', job);
+        const id = await dbService.addJob(finalData);
+        const job = { ...finalData, id };
+        
+        console.log('API: Job created in database:', job);
         return job;
       });
 
-      this.put('/jobs/:id', (schema, request) => {
-        const id = request.params.id;
+      this.put('/jobs/:id', async (schema, request) => {
+        const id = parseInt(request.params.id);
         const attrs = JSON.parse(request.requestBody);
         console.log('API: Updating job', id, 'with data:', attrs);
         
-        const job = schema.jobs.find(id);
-        if (!job) {
-          console.error('API: Job not found:', id);
-          return new Response(404, {}, { error: 'Job not found' });
+        try {
+          await dbService.updateJob(id, attrs);
+          const updatedJob = await dbService.getJobById(id);
+          
+          if (!updatedJob) {
+            console.error('API: Job not found:', id);
+            return new Response(404, {}, { error: 'Job not found' });
+          }
+          
+          console.log('API: Job updated in database:', updatedJob);
+          return updatedJob;
+        } catch (error) {
+          console.error('API: Error updating job:', error);
+          return new Response(500, {}, { error: 'Failed to update job' });
         }
-        
-        job.update({
-          ...attrs,
-          updatedAt: new Date().toISOString()
-        });
-        
-        console.log('API: Job updated:', job);
-        return job;
       });
 
-      this.delete('/jobs/:id', (schema, request) => {
-        const id = request.params.id;
+      this.delete('/jobs/:id', async (schema, request) => {
+        const id = parseInt(request.params.id);
         console.log('API: Deleting job:', id);
         
-        const job = schema.jobs.find(id);
-        if (!job) {
-          console.error('API: Job not found:', id);
-          return new Response(404, {}, { error: 'Job not found' });
+        try {
+          const job = await dbService.getJobById(id);
+          if (!job) {
+            console.error('API: Job not found:', id);
+            return new Response(404, {}, { error: 'Job not found' });
+          }
+          
+          await dbService.deleteJob(id);
+          console.log('API: Job deleted from database successfully');
+          return new Response(204);
+        } catch (error) {
+          console.error('API: Error deleting job:', error);
+          return new Response(500, {}, { error: 'Failed to delete job' });
         }
-        
-        job.destroy();
-        console.log('API: Job deleted successfully');
-        return new Response(204);
       });
 
       // Candidates routes
-      this.get('/candidates', (schema) => {
-        console.log('API: Fetching candidates');
-        const candidates = schema.candidates.all().models;
-        console.log('API: Returning candidates:', candidates.length);
-        return { candidates };
+      this.get('/candidates', async (schema, request) => {
+        console.log('API: Fetching candidates from database');
+        
+        const url = new URL(request.url, 'http://localhost');
+        const search = url.searchParams.get('search');
+        const stage = url.searchParams.get('stage');
+        const jobId = url.searchParams.get('jobId');
+        
+        try {
+          let candidates;
+          
+          if (search) {
+            candidates = await dbService.searchCandidates(search);
+          } else if (stage) {
+            candidates = await dbService.getCandidatesByStage(stage);
+          } else if (jobId) {
+            candidates = await dbService.getCandidatesByJobId(parseInt(jobId));
+          } else {
+            candidates = await dbService.getAllCandidates();
+          }
+          
+          console.log('API: Returning candidates from database:', candidates.length);
+          return { candidates };
+        } catch (error) {
+          console.error('API: Error fetching candidates:', error);
+          return new Response(500, {}, { error: 'Failed to fetch candidates' });
+        }
       });
 
-      this.get('/candidates/stats', (schema) => {
-        console.log('API: Fetching candidate statistics');
-        const candidates = schema.candidates.all().models;
+      this.get('/candidates/stats', async (schema) => {
+        console.log('API: Fetching candidate statistics from database');
         
-        const stats = {
-          total: candidates.length,
-          active: candidates.filter(c => c.status === 'Active').length,
-          inactive: candidates.filter(c => c.status === 'Inactive').length,
-          byStage: {
-            Applied: candidates.filter(c => c.stage === 'Applied').length,
-            Screening: candidates.filter(c => c.stage === 'Screening').length,
-            Technical: candidates.filter(c => c.stage === 'Technical').length,
-            Interview: candidates.filter(c => c.stage === 'Interview').length,
-            Final: candidates.filter(c => c.stage === 'Final').length,
-            Offer: candidates.filter(c => c.stage === 'Offer').length,
-            Hired: candidates.filter(c => c.stage === 'Hired').length,
-            Rejected: candidates.filter(c => c.stage === 'Rejected').length,
-            Withdrawn: candidates.filter(c => c.stage === 'Withdrawn').length
-          },
-          recentApplications: candidates.filter(c => {
-            const createdDate = new Date(c.createdAt);
-            const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            return createdDate > weekAgo;
-          }).length
-        };
-        
-        console.log('API: Returning candidate stats:', stats);
-        return stats;
+        try {
+          const stats = await dbService.getCandidateStats();
+          console.log('API: Returning candidate stats from database:', stats);
+          return stats;
+        } catch (error) {
+          console.error('API: Error fetching candidate stats:', error);
+          return new Response(500, {}, { error: 'Failed to fetch candidate stats' });
+        }
       });
 
-      this.post('/candidates', (schema, request) => {
+      this.post('/candidates', async (schema, request) => {
         try {
           const attrs = JSON.parse(request.requestBody);
           console.log('API: Creating candidate with data:', attrs);
           
           // Ensure we have required fields
-          if (!attrs.name || !attrs.email || !attrs.jobId) {
+          if (!attrs.name || !attrs.email) {
             console.error('API: Missing required fields');
-            return new Response(400, {}, { error: 'Missing required fields: name, email, jobId' });
+            return new Response(400, {}, { error: 'Missing required fields: name, email' });
           }
 
-          const candidate = schema.candidates.create({
+          // Add the candidate to the actual database
+          const finalData = {
             ...attrs,
-            id: attrs.id || Date.now(),
-            createdAt: attrs.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            // Ensure arrays are properly handled
-            experience: attrs.experience || [],
-            education: attrs.education || [],
-            skills: attrs.skills || []
-          });
+            status: attrs.status || 'Active',
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
           
-          console.log('API: Candidate created successfully:', candidate);
+          const id = await dbService.addCandidate(finalData);
+          const candidate = { ...finalData, id };
+          
+          console.log('API: Candidate created in database:', candidate);
           return candidate;
         } catch (error) {
           console.error('API: Error creating candidate:', error);
@@ -438,90 +448,69 @@ export function makeServer({ environment = 'development' } = {}) {
         }
       });
 
-      this.put('/candidates/:id', (schema, request) => {
+      this.put('/candidates/:id', async (schema, request) => {
         try {
-          const id = request.params.id;
+          const id = parseInt(request.params.id);
           const attrs = JSON.parse(request.requestBody);
           console.log('API: Updating candidate', id, 'with data:', attrs);
           
-          const candidate = schema.candidates.find(id);
-          if (!candidate) {
+          const updatedCandidate = await dbService.updateCandidate(id, attrs);
+          
+          if (!updatedCandidate) {
             console.error('API: Candidate not found:', id);
             return new Response(404, {}, { error: 'Candidate not found' });
           }
           
-          candidate.update({
-            ...attrs,
-            updatedAt: new Date().toISOString(),
-            // Ensure arrays are properly handled
-            experience: attrs.experience || candidate.experience || [],
-            education: attrs.education || candidate.education || [],
-            skills: attrs.skills || candidate.skills || []
-          });
-          
-          console.log('API: Candidate updated successfully:', candidate);
-          return candidate;
+          console.log('API: Candidate updated in database:', updatedCandidate);
+          return updatedCandidate;
         } catch (error) {
           console.error('API: Error updating candidate:', error);
           return new Response(500, {}, { error: 'Failed to update candidate' });
         }
       });
 
-      this.patch('/candidates/:id', (schema, request) => {
+      this.patch('/candidates/:id', async (schema, request) => {
         try {
-          const id = request.params.id;
+          const id = parseInt(request.params.id);
           const attrs = JSON.parse(request.requestBody);
           console.log('API: Patching candidate', id, 'with data:', attrs);
           
-          const candidate = schema.candidates.find(id);
-          if (!candidate) {
+          const updatedCandidate = await dbService.updateCandidate(id, attrs);
+          
+          if (!updatedCandidate) {
             console.error('API: Candidate not found:', id);
             return new Response(404, {}, { error: 'Candidate not found' });
           }
           
-          candidate.update({
-            ...attrs,
-            updatedAt: new Date().toISOString(),
-            // Ensure arrays are properly handled
-            experience: attrs.experience || candidate.experience || [],
-            education: attrs.education || candidate.education || [],
-            skills: attrs.skills || candidate.skills || []
-          });
-          
-          console.log('API: Candidate patched successfully:', candidate);
-          return candidate;
+          console.log('API: Candidate patched in database:', updatedCandidate);
+          return updatedCandidate;
         } catch (error) {
           console.error('API: Error patching candidate:', error);
-          return new Response(500, {}, { error: 'Failed to update candidate' });
+          return new Response(500, {}, { error: 'Failed to patch candidate' });
         }
       });
 
-      this.patch('/candidates/bulk', (schema, request) => {
+      this.patch('/candidates/bulk', async (schema, request) => {
         try {
           const { candidateIds, updates } = JSON.parse(request.requestBody);
           console.log('API: Bulk updating candidates:', candidateIds, 'with data:', updates);
           
-          const results = candidateIds.map(id => {
+          const results = await Promise.all(candidateIds.map(async (id) => {
             try {
-              const candidate = schema.candidates.find(id);
-              if (!candidate) {
-                return { id, success: false, error: 'Candidate not found' };
-              }
-              
-              candidate.update({
+              const updated = await dbService.updateCandidate(id, {
                 ...updates,
                 updatedAt: new Date().toISOString(),
                 // Ensure arrays are properly handled
-                experience: updates.experience || candidate.experience || [],
-                education: updates.education || candidate.education || [],
-                skills: updates.skills || candidate.skills || []
+                experience: updates.experience || [],
+                education: updates.education || [],
+                skills: updates.skills || []
               });
               
-              return { id, success: true, candidate: candidate.attrs };
+              return { id, success: true, candidate: updated };
             } catch (error) {
               return { id, success: false, error: error.message };
             }
-          });
+          }));
           
           console.log('API: Bulk update completed:', results);
           return { results };
@@ -531,19 +520,19 @@ export function makeServer({ environment = 'development' } = {}) {
         }
       });
 
-      this.delete('/candidates/:id', (schema, request) => {
+      this.delete('/candidates/:id', async (schema, request) => {
         try {
-          const id = request.params.id;
+          const id = parseInt(request.params.id);
           console.log('API: Deleting candidate:', id);
           
-          const candidate = schema.candidates.find(id);
+          const candidate = await dbService.getCandidateById(id);
           if (!candidate) {
             console.error('API: Candidate not found:', id);
             return new Response(404, {}, { error: 'Candidate not found' });
           }
           
-          candidate.destroy();
-          console.log('API: Candidate deleted successfully');
+          await dbService.deleteCandidate(id);
+          console.log('API: Candidate deleted from database successfully');
           return new Response(204);
         } catch (error) {
           console.error('API: Error deleting candidate:', error);
@@ -551,131 +540,209 @@ export function makeServer({ environment = 'development' } = {}) {
         }
       });
 
-      this.get('/candidates/:id/timeline', (schema, request) => {
+      this.get('/candidates/:id/timeline', async (schema, request) => {
         try {
-          const candidateId = request.params.id;
+          const candidateId = parseInt(request.params.id);
           console.log('API: Fetching timeline for candidate:', candidateId);
           
-          const candidate = schema.candidates.find(candidateId);
-          if (!candidate) {
-            console.error('API: Candidate not found:', candidateId);
-            return new Response(404, {}, { error: 'Candidate not found' });
-          }
-          
-          // Mock timeline data for now - in a real app this would come from a timeline table
-          const timeline = [
-            {
-              id: 1,
-              candidateId: parseInt(candidateId),
-              fromStage: null,
-              toStage: 'Applied',
-              timestamp: candidate.createdAt,
-              notes: 'Application submitted',
-              type: 'stage_change'
-            },
-            {
-              id: 2,
-              candidateId: parseInt(candidateId),
-              fromStage: 'Applied',
-              toStage: candidate.stage,
-              timestamp: candidate.updatedAt,
-              notes: candidate.stageChangeNotes || `Moved to ${candidate.stage}`,
-              type: 'stage_change'
-            }
-          ].filter(item => item.fromStage !== item.toStage); // Remove duplicate stages
-          
-          console.log('API: Returning timeline:', timeline);
-          return { timeline };
+          const timeline = await dbService.getCandidateTimeline(candidateId);
+          console.log('API: Returning candidate timeline from database:', timeline.length);
+          return timeline;
         } catch (error) {
-          console.error('API: Error fetching timeline:', error);
+          console.error('API: Error fetching candidate timeline:', error);
           return new Response(500, {}, { error: 'Failed to fetch candidate timeline' });
         }
       });
 
       // Assessments routes
-      this.get('/assessments', (schema) => {
-        console.log('API: Fetching assessments');
-        const assessments = schema.assessments.all().models;
-        console.log('API: Returning assessments:', assessments.length);
-        return { assessments };
-      });
-
-      this.get('/assessments/:id', (schema, request) => {
-        const id = request.params.id;
-        console.log('API: Fetching assessment:', id);
-        
-        const assessment = schema.assessments.find(id);
-        if (!assessment) {
-          console.error('API: Assessment not found:', id);
-          return new Response(404, {}, { error: 'Assessment not found' });
-        }
-        
-        console.log('API: Assessment found:', assessment);
-        return assessment;
-      });
-
-      this.post('/assessments', (schema, request) => {
+      this.get('/assessments', async (schema, request) => {
         try {
-          const attrs = JSON.parse(request.requestBody);
-          console.log('API: Creating assessment with data:', attrs);
+          console.log('API: Fetching assessments');
+          const url = new URL(request.url, 'http://localhost');
+          const companyId = url.searchParams.get('companyId');
           
-          const assessment = schema.assessments.create({
-            ...attrs,
-            id: attrs.id || Date.now(),
-            createdAt: attrs.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
+          let assessments;
+          if (companyId) {
+            console.log('API: Fetching assessments for company:', companyId);
+            assessments = await dbService.getAllAssessments(parseInt(companyId));
+          } else {
+            console.log('API: Fetching all assessments');
+            assessments = await dbService.getAllAssessments();
+          }
           
-          console.log('API: Assessment created successfully:', assessment);
+          console.log('API: Returning assessments from database:', assessments.length);
+          return { assessments };
+        } catch (error) {
+          console.error('API: Error fetching assessments:', error);
+          return new Response(500, {}, { error: 'Failed to fetch assessments' });
+        }
+      });
+
+      this.get('/assessments/:id', async (schema, request) => {
+        try {
+          const id = parseInt(request.params.id);
+          console.log('API: Fetching assessment:', id);
+          
+          const assessment = await dbService.getAssessmentById(id);
+          if (!assessment) {
+            console.error('API: Assessment not found:', id);
+            return new Response(404, {}, { error: 'Assessment not found' });
+          }
+          
+          console.log('API: Assessment found from database:', assessment);
           return assessment;
+        } catch (error) {
+          console.error('API: Error fetching assessment:', error);
+          return new Response(500, {}, { error: 'Failed to fetch assessment' });
+        }
+      });
+
+      this.post('/assessments', async (schema, request) => {
+        try {
+          const assessmentData = JSON.parse(request.requestBody);
+          console.log('API: Creating assessment with data:', assessmentData);
+          
+          const newAssessment = {
+            ...assessmentData,
+            createdAt: assessmentData.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          
+          const id = await dbService.createAssessment(newAssessment);
+          const savedAssessment = { ...newAssessment, id };
+          
+          console.log('API: Assessment created successfully in database:', savedAssessment);
+          return savedAssessment;
         } catch (error) {
           console.error('API: Error creating assessment:', error);
           return new Response(500, {}, { error: 'Failed to create assessment' });
         }
       });
 
-      this.put('/assessments/:id', (schema, request) => {
+      this.put('/assessments/:id', async (schema, request) => {
         try {
-          const id = request.params.id;
-          const attrs = JSON.parse(request.requestBody);
-          console.log('API: Updating assessment', id, 'with data:', attrs);
+          const id = parseInt(request.params.id);
+          const updates = JSON.parse(request.requestBody);
+          console.log('API: Updating assessment', id, 'with data:', updates);
           
-          const assessment = schema.assessments.find(id);
-          if (!assessment) {
+          // Check if assessment exists
+          const existingAssessment = await dbService.getAssessmentById(id);
+          if (!existingAssessment) {
             console.error('API: Assessment not found:', id);
             return new Response(404, {}, { error: 'Assessment not found' });
           }
           
-          assessment.update({
-            ...attrs,
+          // Update assessment
+          await dbService.updateAssessment(id, {
+            ...updates,
             updatedAt: new Date().toISOString()
           });
           
-          console.log('API: Assessment updated successfully:', assessment);
-          return assessment;
+          // Fetch and return updated assessment
+          const updatedAssessment = await dbService.getAssessmentById(id);
+          console.log('API: Assessment updated successfully in database:', updatedAssessment);
+          return updatedAssessment;
         } catch (error) {
           console.error('API: Error updating assessment:', error);
           return new Response(500, {}, { error: 'Failed to update assessment' });
         }
       });
 
-      this.delete('/assessments/:id', (schema, request) => {
+      this.delete('/assessments/:id', async (schema, request) => {
         try {
-          const id = request.params.id;
+          const id = parseInt(request.params.id);
           console.log('API: Deleting assessment:', id);
           
-          const assessment = schema.assessments.find(id);
-          if (!assessment) {
+          // Check if assessment exists
+          const existingAssessment = await dbService.getAssessmentById(id);
+          if (!existingAssessment) {
             console.error('API: Assessment not found:', id);
             return new Response(404, {}, { error: 'Assessment not found' });
           }
           
-          assessment.destroy();
-          console.log('API: Assessment deleted successfully');
+          // Delete assessment
+          await dbService.deleteAssessment(id);
+          console.log('API: Assessment deleted successfully from database');
           return new Response(204);
         } catch (error) {
           console.error('API: Error deleting assessment:', error);
           return new Response(500, {}, { error: 'Failed to delete assessment' });
+        }
+      });
+
+      // Launch assessment route
+      this.patch('/assessments/:id/launch', async (schema, request) => {
+        try {
+          const id = parseInt(request.params.id);
+          console.log('API: Launching assessment:', id);
+          
+          // Check if assessment exists
+          const existingAssessment = await dbService.getAssessmentById(id);
+          if (!existingAssessment) {
+            console.error('API: Assessment not found:', id);
+            return new Response(404, {}, { error: 'Assessment not found' });
+          }
+          
+          // Launch assessment
+          await dbService.launchAssessment(id);
+          
+          // Fetch and return updated assessment
+          const updatedAssessment = await dbService.getAssessmentById(id);
+          console.log('API: Assessment launched successfully:', updatedAssessment);
+          return updatedAssessment;
+        } catch (error) {
+          console.log('API: Error launching assessment:', error);
+          return new Response(500, {}, { error: 'Failed to launch assessment' });
+        }
+      });
+
+      // Legacy job-specific assessment routes (for backward compatibility)
+      this.get('/assessments/job/:jobId', async (schema, request) => {
+        try {
+          const jobId = parseInt(request.params.jobId);
+          console.log('API: Fetching assessment for job:', jobId);
+          
+          const assessment = await dbService.getAssessmentByJobId(jobId);
+          if (!assessment) {
+            console.error('API: Assessment not found for job:', jobId);
+            return new Response(404, {}, { error: 'Assessment not found for this job' });
+          }
+          
+          console.log('API: Assessment found for job:', assessment);
+          return assessment;
+        } catch (error) {
+          console.error('API: Error fetching assessment by job:', error);
+          return new Response(500, {}, { error: 'Failed to fetch assessment' });
+        }
+      });
+
+      this.put('/assessments/job/:jobId', async (schema, request) => {
+        try {
+          const jobId = parseInt(request.params.jobId);
+          const assessmentData = JSON.parse(request.requestBody);
+          console.log('API: Saving assessment for job:', jobId, 'with data:', assessmentData);
+          
+          const result = await dbService.saveAssessment({ jobId, ...assessmentData });
+          console.log('API: Assessment saved for job successfully:', result);
+          return result;
+        } catch (error) {
+          console.error('API: Error saving assessment for job:', error);
+          return new Response(500, {}, { error: 'Failed to save assessment' });
+        }
+      });
+
+      this.post('/assessments/job/:jobId/submit', async (schema, request) => {
+        try {
+          const jobId = parseInt(request.params.jobId);
+          const responseData = JSON.parse(request.requestBody);
+          console.log('API: Submitting assessment response for job:', jobId, 'with data:', responseData);
+          
+          // For now, return success - this would integrate with assessment response handling
+          console.log('API: Assessment response submitted successfully (placeholder)');
+          return { success: true, message: 'Assessment response submitted' };
+        } catch (error) {
+          console.error('API: Error submitting assessment response:', error);
+          return new Response(500, {}, { error: 'Failed to submit assessment response' });
         }
       });
     }

@@ -100,7 +100,7 @@ function JobsPage() {
         updateJobMutation.mutate(
           { id: editingJob.id, ...processedData },
           {
-            onSuccess: () => {
+            onSuccess: () => { 
               setEditingJob(null);
               setIsJobModalOpen(false);
               refetch(); // Refresh the jobs list

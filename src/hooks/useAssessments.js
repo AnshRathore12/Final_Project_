@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { dbService } from '../lib/database';
+import ApiService from '../services/api';
 
 export const useAssessment = (jobId) => {
   const [assessment, setAssessment] = useState(null);
@@ -8,8 +8,8 @@ export const useAssessment = (jobId) => {
 
   useEffect(() => {
     if (jobId) {
-      dbService.getAssessmentByJobId(jobId)
-        .then(setAssessment)
+      ApiService.getAssessmentByJob(jobId)
+        .then(response => setAssessment(response))
         .catch(setError)
         .finally(() => setLoading(false));
     }
@@ -21,15 +21,7 @@ export const useAssessment = (jobId) => {
 export const useSaveAssessment = () => {
   return {
     mutateAsync: async ({ jobId, ...assessmentData }) => {
-      return await dbService.saveAssessment({ jobId, ...assessmentData });
-    }
-  };
-};
-
-export const useSubmitAssessment = () => {
-  return {
-    mutateAsync: async ({ jobId, ...responseData }) => {
-      return await dbService.submitAssessmentResponse({ jobId, ...responseData });
+      return await ApiService.saveAssessmentToJob(jobId, assessmentData);
     }
   };
 };
@@ -40,12 +32,12 @@ export function useAssessments(companyId = 1) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Load assessments from database
+  // Load assessments from API
   const loadAssessments = async () => {
     try {
       setLoading(true);
-      const data = await dbService.getAllAssessments(companyId);
-      setAssessments(data);
+      const response = await ApiService.getAssessments(companyId);
+      setAssessments(response.assessments || []);
     } catch (err) {
       setError(err.message);
       console.error('Error loading assessments:', err);
@@ -57,6 +49,8 @@ export function useAssessments(companyId = 1) {
   // Create new assessment
   const createAssessment = async (assessmentData) => {
     try {
+      console.log('Hook: Creating assessment with data:', assessmentData);
+      
       const newAssessment = {
         ...assessmentData,
         companyId,
@@ -65,11 +59,12 @@ export function useAssessments(companyId = 1) {
         updatedAt: new Date().toISOString()
       };
       
-      const id = await dbService.createAssessment(newAssessment);
-      const savedAssessment = { ...newAssessment, id };
+      const response = await ApiService.createAssessment(newAssessment);
+      console.log('Hook: Assessment created successfully:', response);
       
-      setAssessments(prev => [savedAssessment, ...prev]);
-      return savedAssessment;
+      // Update local state
+      setAssessments(prev => [response, ...prev]);
+      return response;
     } catch (err) {
       setError(err.message);
       console.error('Error creating assessment:', err);
@@ -80,12 +75,19 @@ export function useAssessments(companyId = 1) {
   // Update assessment
   const updateAssessment = async (id, updates) => {
     try {
-      await dbService.updateAssessment(id, updates);
+      console.log('Hook: Updating assessment:', id, 'with updates:', updates);
+      
+      const response = await ApiService.updateAssessment(id, {
+        ...updates,
+        updatedAt: new Date().toISOString()
+      });
+      
+      console.log('Hook: Assessment updated successfully:', response);
+      
+      // Update local state
       setAssessments(prev => 
         prev.map(assessment => 
-          assessment.id === id 
-            ? { ...assessment, ...updates, updatedAt: new Date().toISOString() }
-            : assessment
+          assessment.id === id ? response : assessment
         )
       );
     } catch (err) {
@@ -98,7 +100,12 @@ export function useAssessments(companyId = 1) {
   // Launch assessment
   const launchAssessment = async (id) => {
     try {
-      await dbService.launchAssessment(id);
+      console.log('Hook: Launching assessment:', id);
+      
+      await ApiService.launchAssessment(id);
+      console.log('Hook: Assessment launched successfully');
+      
+      // Update local state
       setAssessments(prev => 
         prev.map(assessment => 
           assessment.id === id 
@@ -121,7 +128,12 @@ export function useAssessments(companyId = 1) {
   // Delete assessment
   const deleteAssessment = async (id) => {
     try {
-      await dbService.deleteAssessment(id);
+      console.log('Hook: Deleting assessment:', id);
+      
+      await ApiService.deleteAssessment(id);
+      console.log('Hook: Assessment deleted successfully');
+      
+      // Update local state
       setAssessments(prev => prev.filter(assessment => assessment.id !== id));
     } catch (err) {
       setError(err.message);

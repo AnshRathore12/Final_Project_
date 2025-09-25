@@ -13,23 +13,6 @@ db.version(3).stores({
 
 // Database service functions
 export const dbService = {
-  // Companies
-  async getAllCompanies() {
-    return await db.companies.toArray();
-  },
-
-  async getCompanyById(id) {
-    return await db.companies.get(id);
-  },
-
-  async createCompany(company) {
-    return await db.companies.add({
-      ...company,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-  },
-
   // Jobs
   async getAllJobs() {
     return await db.jobs.orderBy('order').toArray();
@@ -256,13 +239,6 @@ export const dbService = {
         updatedAt: new Date()
       });
     }
-  },
-
-  async submitAssessmentResponse(response) {
-    return await db.assessmentResponses.add({
-      ...response,
-      submittedAt: new Date()
-    });
   }
 };
 
@@ -615,22 +591,4 @@ export const seedData = async () => {
   await db.assessments.bulkAdd(assessments);
 
   console.log('Database seeded successfully!');
-};
-
-// Force re-seed all data (useful for development)
-export const forceSeedAll = async () => {
-  console.log('Force clearing and seeding all data...');
-  
-  // Clear all tables
-  await db.companies.clear();
-  await db.jobs.clear();
-  await db.candidates.clear();
-  await db.candidateTimeline.clear();
-  await db.assessments.clear();
-  await db.assessmentResponses.clear();
-  
-  // Call the main seed function
-  await seedData();
-  
-  console.log('Successfully force seeded all data!');
 };

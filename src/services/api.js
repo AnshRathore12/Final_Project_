@@ -39,7 +39,7 @@ class ApiService {
 
   async updateJob(id, updates) {
     return this.request(`/jobs/${id}`, {
-      method: 'PATCH',
+      method: 'PUT',
       body: JSON.stringify(updates),
     });
   }
@@ -75,19 +75,55 @@ class ApiService {
   }
 
   // Assessments API
-  async getAssessment(jobId) {
-    return this.request(`/assessments/${jobId}`);
+  async getAssessments(companyId) {
+    const params = companyId ? `?companyId=${companyId}` : '';
+    return this.request(`/assessments${params}`);
   }
 
-  async saveAssessment(jobId, assessmentData) {
-    return this.request(`/assessments/${jobId}`, {
+  async getAssessmentById(id) {
+    return this.request(`/assessments/${id}`);
+  }
+
+  async createAssessment(assessmentData) {
+    return this.request('/assessments', {
+      method: 'POST',
+      body: JSON.stringify(assessmentData),
+    });
+  }
+
+  async updateAssessment(id, updates) {
+    return this.request(`/assessments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteAssessment(id) {
+    return this.request(`/assessments/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async launchAssessment(id) {
+    return this.request(`/assessments/${id}/launch`, {
+      method: 'PATCH',
+    });
+  }
+
+  // Job-specific assessment methods (legacy)
+  async getAssessmentByJob(jobId) {
+    return this.request(`/assessments/job/${jobId}`);
+  }
+
+  async saveAssessmentToJob(jobId, assessmentData) {
+    return this.request(`/assessments/job/${jobId}`, {
       method: 'PUT',
       body: JSON.stringify(assessmentData),
     });
   }
 
-  async submitAssessment(jobId, responseData) {
-    return this.request(`/assessments/${jobId}/submit`, {
+  async submitAssessmentResponse(jobId, responseData) {
+    return this.request(`/assessments/job/${jobId}/submit`, {
       method: 'POST',
       body: JSON.stringify(responseData),
     });

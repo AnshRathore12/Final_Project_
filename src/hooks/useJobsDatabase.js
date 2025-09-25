@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { dbService } from '../lib/database';
 import { toast } from 'react-hot-toast';
+import ApiService from '../services/api';
 
-// Fetch all jobs using database
+// Fetch all jobs using API
 export const useJobs = () => {
   const [data, setData] = useState({ jobs: [] });
   const [isLoading, setIsLoading] = useState(true);
@@ -11,8 +11,8 @@ export const useJobs = () => {
   const loadJobs = async () => {
     try {
       setIsLoading(true);
-      const jobs = await dbService.getAllJobs();
-      setData({ jobs });
+      const result = await ApiService.getJobs();
+      setData({ jobs: result.jobs || [] });
     } catch (err) {
       setError(err.message);
       console.error('Error loading jobs:', err);
@@ -28,7 +28,7 @@ export const useJobs = () => {
   return { data, isLoading, error, refetch: loadJobs };
 };
 
-// Create a new job using database
+// Create a new job using API
 export const useCreateJob = () => {
   const [isPending, setIsPending] = useState(false);
   
@@ -37,23 +37,20 @@ export const useCreateJob = () => {
     mutate: async (jobData, { onSuccess, onError } = {}) => {
       try {
         setIsPending(true);
-        console.log('Creating job in database:', jobData);
+        console.log('Creating job via API:', jobData);
         
         const finalData = {
           ...jobData,
           order: Date.now(), // Use timestamp for ordering
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
         };
         
-        const id = await dbService.addJob(finalData);
-        const newJob = { ...finalData, id };
+        const newJob = await ApiService.createJob(finalData);
         
-        console.log('Job created successfully:', newJob);
+        console.log('Job created successfully via API:', newJob);
         toast.success('Job created successfully!');
         if (onSuccess) onSuccess(newJob);
       } catch (error) {
-        console.error('Error creating job:', error);
+        console.error('Error creating job via API:', error);
         toast.error('Failed to create job. Please try again.');
         if (onError) onError(error);
       } finally {
@@ -63,7 +60,7 @@ export const useCreateJob = () => {
   };
 };
 
-// Update an existing job using database
+// Update an existing job using API
 export const useUpdateJob = () => {
   const [isPending, setIsPending] = useState(false);
   
@@ -72,21 +69,15 @@ export const useUpdateJob = () => {
     mutate: async ({ id, ...jobData }, { onSuccess, onError } = {}) => {
       try {
         setIsPending(true);
-        console.log('Updating job in database:', id, jobData);
+        console.log('Updating job via API:', id, jobData);
         
-        const finalData = {
-          ...jobData,
-          updatedAt: new Date().toISOString()
-        };
+        const updatedJob = await ApiService.updateJob(id, jobData);
         
-        await dbService.updateJob(id, finalData);
-        const updatedJob = { ...finalData, id };
-        
-        console.log('Job updated successfully:', updatedJob);
+        console.log('Job updated successfully via API:', updatedJob);
         toast.success('Job updated successfully!');
         if (onSuccess) onSuccess(updatedJob);
       } catch (error) {
-        console.error('Error updating job:', error);
+        console.error('Error updating job via API:', error);
         toast.error('Failed to update job. Please try again.');
         if (onError) onError(error);
       } finally {
@@ -96,7 +87,7 @@ export const useUpdateJob = () => {
   };
 };
 
-// Delete a job using database
+// Delete a job using API
 export const useDeleteJob = () => {
   const [isPending, setIsPending] = useState(false);
   
@@ -105,15 +96,15 @@ export const useDeleteJob = () => {
     mutate: async (jobId, { onSuccess, onError } = {}) => {
       try {
         setIsPending(true);
-        console.log('Deleting job from database:', jobId);
+        console.log('Deleting job via API:', jobId);
         
-        await dbService.deleteJob(jobId);
+        await ApiService.deleteJob(jobId);
         
-        console.log('Job deleted successfully:', jobId);
+        console.log('Job deleted successfully via API:', jobId);
         toast.success('Job deleted successfully!');
         if (onSuccess) onSuccess();
       } catch (error) {
-        console.error('Error deleting job:', error);
+        console.error('Error deleting job via API:', error);
         toast.error('Failed to delete job. Please try again.');
         if (onError) onError(error);
       } finally {

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { dbService } from '../lib/database';
 import { toast } from 'react-hot-toast';
+import ApiService from '../services/api';
 
-// Fetch all candidates using database with optional filters
+// Fetch all candidates using API with optional filters
 export const useCandidates = (filters = {}) => {
   const [data, setData] = useState({ candidates: [] });
   const [isLoading, setIsLoading] = useState(true);
@@ -11,20 +11,8 @@ export const useCandidates = (filters = {}) => {
   const loadCandidates = async () => {
     try {
       setIsLoading(true);
-      let candidates;
-      
-      // Apply filters
-      if (filters.search) {
-        candidates = await dbService.searchCandidates(filters.search);
-      } else if (filters.stage) {
-        candidates = await dbService.getCandidatesByStage(filters.stage);
-      } else if (filters.jobId) {
-        candidates = await dbService.getCandidatesByJobId(filters.jobId);
-      } else {
-        candidates = await dbService.getAllCandidates();
-      }
-      
-      setData({ candidates });
+      const result = await ApiService.getCandidates(filters);
+      setData({ candidates: result.candidates || [] });
     } catch (err) {
       setError(err.message);
       console.error('Error loading candidates:', err);
@@ -40,7 +28,7 @@ export const useCandidates = (filters = {}) => {
   return { data, isLoading, error, refetch: loadCandidates };
 };
 
-// Get candidate statistics using database
+// Get candidate statistics using API
 export const useCandidateStats = () => {
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -49,7 +37,7 @@ export const useCandidateStats = () => {
   const loadStats = async () => {
     try {
       setIsLoading(true);
-      const stats = await dbService.getCandidateStats();
+      const stats = await ApiService.getCandidateStats();
       setData(stats);
     } catch (err) {
       setError(err.message);
@@ -66,7 +54,7 @@ export const useCandidateStats = () => {
   return { data, isLoading, error, refetch: loadStats };
 };
 
-// Get a single candidate by ID using database
+// Get a single candidate by ID using API
 export const useCandidate = (id) => {
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,7 +65,7 @@ export const useCandidate = (id) => {
     
     try {
       setIsLoading(true);
-      const candidate = await dbService.getCandidateById(id);
+      const candidate = await ApiService.getCandidate(id);
       setData(candidate);
     } catch (err) {
       setError(err.message);
@@ -94,7 +82,7 @@ export const useCandidate = (id) => {
   return { data, isLoading, error, refetch: loadCandidate };
 };
 
-// Get candidate timeline using database
+// Get candidate timeline using API
 export const useCandidateTimeline = (candidateId) => {
   const [data, setData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -105,7 +93,7 @@ export const useCandidateTimeline = (candidateId) => {
     
     try {
       setIsLoading(true);
-      const timeline = await dbService.getCandidateTimeline(candidateId);
+      const timeline = await ApiService.getCandidateTimeline(candidateId);
       setData(timeline);
     } catch (err) {
       setError(err.message);
@@ -122,7 +110,7 @@ export const useCandidateTimeline = (candidateId) => {
   return { data, isLoading, error, refetch: loadTimeline };
 };
 
-// Create a new candidate using database
+// Create a new candidate using API
 export const useCreateCandidate = () => {
   const [isPending, setIsPending] = useState(false);
   
@@ -131,19 +119,11 @@ export const useCreateCandidate = () => {
     mutate: async (candidateData, { onSuccess, onError } = {}) => {
       try {
         setIsPending(true);
-        console.log('Creating candidate in database:', candidateData);
+        console.log('Creating candidate via API:', candidateData);
         
-        const finalData = {
-          ...candidateData,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          status: candidateData.status || 'Active'
-        };
+        const newCandidate = await ApiService.createCandidate(candidateData);
         
-        const id = await dbService.addCandidate(finalData);
-        const newCandidate = { ...finalData, id };
-        
-        console.log('Candidate created successfully:', newCandidate);
+        console.log('Candidate created successfully via API:', newCandidate);
         toast.success(`Candidate ${newCandidate.name} created successfully!`);
         if (onSuccess) onSuccess(newCandidate);
       } catch (error) {
@@ -157,7 +137,7 @@ export const useCreateCandidate = () => {
   };
 };
 
-// Update an existing candidate using database
+// Update an existing candidate using API
 export const useUpdateCandidate = () => {
   const [isPending, setIsPending] = useState(false);
   
@@ -166,15 +146,15 @@ export const useUpdateCandidate = () => {
     mutate: async ({ id, updates }, { onSuccess, onError } = {}) => {
       try {
         setIsPending(true);
-        console.log('Updating candidate in database:', id, updates);
+        console.log('Updating candidate via API:', id, updates);
         
-        const updatedCandidate = await dbService.updateCandidate(id, updates);
+        const updatedCandidate = await ApiService.updateCandidate(id, updates);
         
-        console.log('Candidate updated successfully:', updatedCandidate);
+        console.log('Candidate updated successfully via API:', updatedCandidate);
         toast.success(`Candidate ${updatedCandidate.name} updated successfully!`);
         if (onSuccess) onSuccess(updatedCandidate);
       } catch (error) {
-        console.error('Error updating candidate:', error);
+        console.error('Error updating candidate via API:', error);
         toast.error('Failed to update candidate. Please try again.');
         if (onError) onError(error);
       } finally {
@@ -184,7 +164,7 @@ export const useUpdateCandidate = () => {
   };
 };
 
-// Delete a candidate using database
+// Delete a candidate using API
 export const useDeleteCandidate = () => {
   const [isPending, setIsPending] = useState(false);
   
@@ -193,15 +173,15 @@ export const useDeleteCandidate = () => {
     mutate: async (candidateId, { onSuccess, onError } = {}) => {
       try {
         setIsPending(true);
-        console.log('Deleting candidate from database:', candidateId);
+        console.log('Deleting candidate via API:', candidateId);
         
-        await dbService.deleteCandidate(candidateId);
+        await ApiService.deleteCandidate(candidateId);
         
-        console.log('Candidate deleted successfully:', candidateId);
+        console.log('Candidate deleted successfully via API:', candidateId);
         toast.success('Candidate deleted successfully!');
         if (onSuccess) onSuccess();
       } catch (error) {
-        console.error('Error deleting candidate:', error);
+        console.error('Error deleting candidate via API:', error);
         toast.error('Failed to delete candidate. Please try again.');
         if (onError) onError(error);
       } finally {
