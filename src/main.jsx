@@ -7,14 +7,20 @@ import './index.css'
 import { makeServer } from './server'
 import { seedData } from './lib/database'
 
-// Start Mirage server in development
-if (import.meta.env.DEV) {
-  makeServer({ environment: 'development' })
-}
-
 // Initialize database and seed data only if empty
 seedData().then(async () => {
   console.log('Database seeding completed');
+  
+  // Start Mirage server in development AFTER database seeding
+  if (import.meta.env.DEV) {
+    console.log('Starting MirageJS server...');
+    try {
+      const server = makeServer({ environment: 'development' });
+      console.log('MirageJS server started successfully');
+    } catch (error) {
+      console.error('Error starting MirageJS server:', error);
+    }
+  }
   
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>

@@ -8,7 +8,9 @@ const delay = () => new Promise(resolve =>
 const shouldFail = () => Math.random() < 0.08; // 8% failure rate
 
 export function makeServer({ environment = 'development' } = {}) {
-  return createServer({
+  console.log('MirageJS: Creating server with environment:', environment);
+  
+  const server = createServer({
     environment,
     
     models: {
@@ -304,8 +306,11 @@ export function makeServer({ environment = 'development' } = {}) {
     },
 
     routes() {
+      console.log('MirageJS: Setting up routes...');
       this.namespace = 'api';
       this.timing = 300; // Reduced timing for better performance
+
+      console.log('MirageJS: Routes configured with namespace "api"');
 
       // Jobs routes
       this.get('/jobs', async (schema) => {
@@ -747,4 +752,7 @@ export function makeServer({ environment = 'development' } = {}) {
       });
     }
   });
+
+  console.log('MirageJS: Server created successfully');
+  return server;
 }
